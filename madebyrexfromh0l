@@ -1,0 +1,224 @@
+local player = game.Players.LocalPlayer
+local camera = game.Workspace.CurrentCamera
+local camLockEnabled = false
+local targets = {}
+local predictionValue = 0.133
+local aimingDot
+local target
+local cFrameSpeed = 100
+
+-- Create Intro GUI
+local introGui = Instance.new("ScreenGui")
+introGui.Parent = player.PlayerGui
+
+local introLabel = Instance.new("TextLabel")
+introLabel.Size = UDim2.new(1, 0, 0.1, 0)
+introLabel.Position = UDim2.new(0, 0, 0, 0)
+introLabel.Text = "Made by @rexfromh0l\n- - expect bugs cause I quit this shit"
+introLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+introLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+introLabel.TextScaled = true
+introLabel.Parent = introGui
+
+wait(3) -- Wait for 3 seconds before removing the intro
+introGui:Destroy()
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player.PlayerGui
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 100, 0, 100)
+toggleButton.Position = UDim2.new(0.02, 0, 0.3, 0)
+toggleButton.Text = "Lock • Off"
+toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+toggleButton.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = toggleButton
+
+local isDragging = false
+local dragInput, dragStart, startPos
+
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    toggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+toggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = true
+        dragStart = input.Position
+        startPos = toggleButton.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                isDragging = false
+            end
+        end)
+    end
+end)
+
+toggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if isDragging and input == dragInput then
+        updateDrag(input)
+    end
+end)
+
+local function createAimingDot()
+    aimingDot = Instance.new("Frame")
+    aimingDot.Size = UDim2.new(0, 15, 0, 15)
+    aimingDot.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    aimingDot.BorderSizePixel = 0
+    aimingDot.Parent = screenGui
+
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    dotCorner.Parent = aimingDot
+
+    aimingDot.Visible = false
+end
+
+local function updateTargets()
+    targets = {}
+    for _, otherPlayer in pairs(game.Players:GetPlayers()) do
+        if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("UpperTorso") then
+            table.insert(targets, otherPlayer.Character.UpperTorso)
+        end
+    end
+end
+
+local function getClosestTarget()
+    local closestTarget = nil
+    local minDistance = math.huge
+
+    for _, target in pairs(targets) do
+        local screenPosition, onScreen = camera:WorldToScreenPoint(target.Position)
+        if onScreen then
+            local distance = (Vector2.new(screenPosition.X, screenPosition.Y) - Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)).Magnitude
+            if distance < minDistance then
+                minDistance = distance
+                closestTarget = target
+            end
+        end
+    end
+
+    return closestTarget
+end
+
+local function lockCamera(target)
+    if camLockEnabled and target then
+        local targetPosition = target.Position
+
+        if target.Parent:FindFirstChild("UpperTorso") then
+            local velocity = target.Parent.UpperTorso.Velocity
+            targetPosition = targetPosition + (velocity * predictionValue)
+        end
+
+        local targetCFrame = CFrame.new(camera.CFrame.Position, targetPosition)
+        camera.CFrame = camera.CFrame:Lerp(targetCFrame, cFrameSpeed / 100)
+
+        if aimingDot then
+            local screenPosition = camera:WorldToScreenPoint(target.Position)
+            aimingDot.Position = UDim2.new(0, screenPosition.X - aimingDot.Size.X.Offset / 2, 0, screenPosition.Y - aimingDot.Size.Y.Offset / 2)
+        end
+    end
+end
+
+local function toggleCamLock()
+    camLockEnabled = not camLockEnabled
+    if camLockEnabled then
+        toggleButton.Text = "Lock • On"
+        aimingDot.Visible = true
+        updateTargets()
+        target = getClosestTarget()
+    else
+        toggleButton.Text = "Lock • Off"
+        aimingDot.Visible = false
+        target = nil
+    end
+end
+
+toggleButton.MouseButton1Click:Connect(function()
+    toggleCamLock()
+end)
+
+createAimingDot()
+
+game:GetService("RunService").RenderStepped:Connect(function()
+    if camLockEnabled and target then
+        lockCamera(target)
+    end
+end)
+
+local LocalRex = {
+    SelfCharms = {
+        Trails = {
+            Enabled = true,
+            Thickness = 0.2,
+            FadeTime = 3,
+            Interval = 0.1,
+            HueIncrement = 0.01, -- Speed of color change
+        }
+    }
+}
+
+-- Function to start the trail
+LocalRex.SelfCharms.Trails.StartTrail = function()
+    local player = game.Players.LocalPlayer
+    local character = player.Character or player.CharacterAdded:Wait()
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+
+    local lastPosition = rootPart.Position
+    local hue = 0 -- Start hue value
+
+    -- Function to create a line
+    local function createLine(startPos, endPos, color)
+        local distance = (startPos - endPos).Magnitude
+        local line = Instance.new("Part")
+        line.Anchored = true
+        line.CanCollide = false
+        line.Color = color
+        line.Size = Vector3.new(LocalRex.SelfCharms.Trails.Thickness, LocalRex.SelfCharms.Trails.Thickness, distance)
+        line.Material = Enum.Material.Neon
+        line.Parent = workspace
+
+        -- Calculate the CFrame for the line
+        line.CFrame = CFrame.new(startPos, endPos) * CFrame.new(0, 0, -distance / 2)
+
+        -- Create a tween to fade the line
+        game:GetService("TweenService"):Create(line, TweenInfo.new(LocalRex.SelfCharms.Trails.FadeTime), {Transparency = 1}):Play()
+        game.Debris:AddItem(line, LocalRex.SelfCharms.Trails.FadeTime + 0.1)
+    end
+
+    -- Function to generate the trail
+    local function generateTrail()
+        while LocalRex.SelfCharms.Trails.Enabled do
+            local currentPosition = rootPart.Position
+
+            if (lastPosition - currentPosition).Magnitude > 0.1 then
+                -- Calculate the rainbow color based on the current hue
+                local color = Color3.fromHSV(hue, 1, 1) -- Full saturation and brightness
+                createLine(lastPosition, currentPosition, color) -- Pass the color to createLine
+
+                lastPosition = currentPosition
+
+                -- Increment hue and wrap around
+                hue = (hue + LocalRex.SelfCharms.Trails.HueIncrement) % 1
+            end
+
+            wait(LocalRex.SelfCharms.Trails.Interval)
+        end
+    end
+
+    generateTrail()
+end
+
+-- Start the trail
+LocalRex.SelfCharms.Trails.StartTrail()
